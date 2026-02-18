@@ -1,167 +1,41 @@
 # a21e CLI
 
-`a21e` is the command-line client for workspace setup and tool-specific key provisioning.
-
-## Install
+Minimal CLI for workspace setup and tool configuration. Install via:
 
 ```bash
 curl -fsSL https://get.a21e.com/install.sh | bash
 ```
 
-Verify:
-
-```bash
-a21e version
-```
-
-## Quick Start
-
-1. Create a platform API key at <https://a21e.com/api-key>.
-2. Export it:
-   ```bash
-   export A21E_API_KEY="a21e_your_platform_key"
-   ```
-3. Generate a tool key:
-   ```bash
-   a21e init --tool codex_cli
-   ```
-
 ## Commands
 
-```bash
-a21e version
-a21e init
-a21e init --tool <tool_id>
-a21e init --tool <tool_id> --workspace <workspace_id>
-a21e init --non-interactive --tool <tool_id> --workspace <workspace_id> --yes
-```
+- **a21e version** — Show version (set at build time from release tag).
+- **a21e init** — Create a CLI key for a tool and print export snippet.
+  - **Device login (no key yet):** Run `a21e init` with no `A21E_API_KEY` set. The CLI will print a URL; open it in your browser, sign in, and click “Authorize this device.” The key is then saved to `~/.a21e/credentials` and used automatically on the next run.
+  - **Single command in IDEs:** With a key (from device login or env), run `a21e init` from Cursor, VS Code, or JetBrains; the CLI auto-detects the tool so you don’t need `--tool`.
+  - Interactive: `a21e init` (uses default workspace; tool is auto-detected when possible, else use `--tool <id>`).
+  - Scoped: `a21e init --tool claude_code_cli [--workspace <id>]`.
+  - Auto-apply supported configs: `a21e init --tool vscode --workspace <id> --apply`.
+  - CI: `a21e init --non-interactive --tool <id> --workspace <id> --yes` (or set `A21E_TOOL_ID`).
+  - Key source: `A21E_API_KEY` env, or `~/.a21e/credentials` (written by device login). Optional `A21E_API_URL`, `A21E_TOOL_ID`.
+  - Supported tool IDs: `codex_cli`, `claude_code_cli`, `cursor`, `vscode`, `jetbrains`, `openai_cli_custom`.
+  - **Note:** Cursor’s integrated terminal often sets `TERM_PROGRAM=vscode`, so tool may be detected as `vscode`. To create a Cursor key and apply Cursor settings, use `a21e init --tool cursor` or `A21E_TOOL_ID=cursor a21e init`.
 
-## Supported tool_id values
+## Auto-apply support
 
-- `codex_cli`
-- `claude_code_cli`
-- `cursor`
-- `vscode`
-- `jetbrains`
-- `openai_cli_custom`
+- `vscode`: patches VS Code user settings (`a21e.apiUrl`, `a21e.apiKey`, `a21e.defaultModel`).
+- `cursor`: patches Cursor user settings (`a21e.apiUrl`, `a21e.apiKey`, `a21e.defaultModel`).
+- `openai_cli_custom`: updates shell profile with `OPENAI_API_BASE`, `OPENAI_BASE_URL`, `OPENAI_API_KEY`.
+- `codex_cli`, `claude_code_cli`, `jetbrains`: manual configuration remains required.
 
-## Environment Variables
+## Building
 
-| Variable | Required | Default | Description |
-|---|---|---|---|
-| `A21E_API_KEY` | Yes (for `init`) | — | Your a21e platform API key |
-| `A21E_API_URL` | No | `https://api.a21e.com` | Override API base URL |
-
-## Tool Setup
-
-### Shared OpenAI-compatible values
-
-- Base URL: `https://api.a21e.com/v1`
-- API key: key returned by `a21e init`
-- Model: `a21e-auto`
-
-### Codex CLI (`codex_cli`)
-
-```bash
-a21e init --tool codex_cli
-```
-
-### Claude Code (`claude_code_cli`)
-
-```bash
-a21e init --tool claude_code_cli
-```
-
-### Cursor (`cursor`)
-
-```bash
-a21e init --tool cursor
-```
-
-### VS Code (`vscode`)
-
-```bash
-a21e init --tool vscode
-```
-
-### JetBrains (`jetbrains`)
-
-```bash
-a21e init --tool jetbrains
-```
-
-### OpenAI-compatible CLI (`openai_cli_custom`)
-
-```bash
-a21e init --tool openai_cli_custom
-export OPENAI_API_BASE="https://api.a21e.com/v1"
-export OPENAI_API_KEY="a21e_your_generated_tool_key"
-
-openai api chat.completions.create \
-  -m a21e-auto \
-  -g user "Hello from the CLI"
-```
-
-## Workspace-Scoped Setup
-
-```bash
-a21e init --tool claude_code_cli --workspace <workspace_id>
-```
-
-## CI / Non-Interactive Setup
-
-```bash
-export A21E_API_KEY="a21e_your_platform_key"
-a21e init --non-interactive --tool openai_cli_custom --workspace <workspace_id> --yes
-```
-
-## Build from Source
+From repo root or `packages/cli`:
 
 ```bash
 cd packages/cli
 go build -ldflags "-X main.version=dev" -o a21e .
-./a21e version
 ```
 
-## Release Process
+## Releases
 
-1. Create and push a tag:
-   ```bash
-   git tag v0.1.0
-   git push origin v0.1.0
-   ```
-2. Publish release:
-   ```bash
-   gh release create v0.1.0 --title "v0.1.0" --notes "Initial CLI release"
-   ```
-3. The release workflow uploads:
-   - `a21e-darwin-arm64.tar.gz`
-   - `a21e-darwin-x86_64.tar.gz`
-   - `a21e-linux-arm64.tar.gz`
-   - `a21e-linux-x86_64.tar.gz`
-   - matching `.sha256` files
-4. Verify asset availability:
-   ```bash
-   curl -I https://github.com/refactor-to/a21e/releases/latest/download/a21e-darwin-arm64.tar.gz
-   ```
-
-## Troubleshooting
-
-- `a21e init: A21E_API_KEY is required`
-  - Export `A21E_API_KEY` first.
-- `invalid tool_id`
-  - Use one of the supported values listed above.
-- Installer download `404`
-  - No published release, missing asset, or private-only asset URL.
-- API `401`/`403`
-  - Wrong key, wrong base URL, or revoked key.
-
-## Security Notes
-
-- Generated tool keys are shown once.
-- Treat keys as secrets.
-- Rotate immediately if exposed.
-
-## License
-
-See the repository `LICENSE`.
+Binaries are built and attached to GitHub Releases by the [Release CLI](../../.github/workflows/release-cli.yml) workflow when you **publish a Release** (e.g. from tag `v0.1.0`). Assets: `a21e-darwin-arm64.tar.gz`, `a21e-darwin-x86_64.tar.gz`, `a21e-linux-arm64.tar.gz`, `a21e-linux-x86_64.tar.gz` and their `.sha256` files. The install script uses `https://github.com/refactor-to/a21e-cli/releases/latest/download/<asset>` (default repo: refactor-to/a21e-cli).

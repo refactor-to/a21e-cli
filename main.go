@@ -3,6 +3,7 @@ package main
 
 import (
 	"bufio"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -35,14 +36,18 @@ Usage:
   a21e init            Interactive setup (or use --tool and --workspace)
 
 Init:
-  a21e init                              Prompt for API key if needed, use default workspace
-  a21e init --tool <tool_id>              Create CLI key for tool (default workspace)
-  a21e init --tool <tool_id> --workspace <id>   Scoped to workspace
+  a21e init                              Auto-detect tool in Cursor/VS Code/JetBrains terminal, or prompt
+  a21e init --tool <tool_id>              Create user-scoped CLI key (works with any workspace)
+  a21e init --tool <tool_id> --workspace <id>   Create key in workspace (user-scoped by default)
+  a21e init --tool <tool_id> --workspace <id> --workspace-scoped   Key bound to that workspace only
+  a21e init --tool <tool_id> --workspace <id> --project <id>   Key bound to that project only
+  a21e init --tool <tool_id> --workspace <id> --apply   Auto-apply supported tool settings
   a21e init --non-interactive --tool <id> --workspace <id> --yes   CI mode
 
 Environment:
   A21E_API_KEY   Your API key (get one at https://a21e.com/api-key)
   A21E_API_URL   API base URL (default https://api.a21e.com)
+  A21E_TOOL_ID   Override auto-detected tool (e.g. cursor, vscode, jetbrains)
 
 Supported tool_id: codex_cli, claude_code_cli, cursor, vscode, jetbrains, openai_cli_custom
 `)
@@ -52,6 +57,9 @@ func runInit(args []string) {
 	fs := flag.NewFlagSet("init", flag.ExitOnError)
 	tool := fs.String("tool", "", "Tool ID to configure (e.g. claude_code_cli)")
 	workspaceID := fs.String("workspace", "", "Workspace ID (omit to use default)")
+	workspaceScoped := fs.Bool("workspace-scoped", false, "Bind key to this workspace only")
+	projectID := fs.String("project", "", "Bind key to this project (must be in the given workspace)")
+	apply := fs.Bool("apply", false, "Auto-apply configuration where supported")
 	nonInteractive := fs.Bool("non-interactive", false, "CI/non-interactive mode")
 	yes := fs.Bool("yes", false, "Skip confirmations")
 	_ = yes
@@ -62,21 +70,36 @@ func runInit(args []string) {
 	apiKey := getAPIKey()
 	baseURL := getAPIBaseURL()
 
+	// --- No API key: offer device flow (browser sign-in) or exit ---
+	if apiKey == "" {
+		if *nonInteractive {
+			fmt.Fprintf(os.Stderr, "a21e init: A21E_API_KEY is required in non-interactive mode (or run without --non-interactive to use device login)\n")
+			os.Exit(1)
+		}
+		fmt.Fprintf(os.Stderr, "No API key found. Authorize this device in your browser to get a key.\n")
+		key, err := startDeviceFlow(baseURL)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "a21e init: %v\n", err)
+			os.Exit(1)
+		}
+		if err := writeCredentialsFile(key); err != nil {
+			fmt.Fprintf(os.Stderr, "a21e init: could not save key to file: %v\n", err)
+			fmt.Fprintf(os.Stderr, "Save the key below and set A21E_API_KEY in your environment.\n")
+		}
+		fmt.Fprintln(os.Stderr, "")
+		fmt.Fprintln(os.Stderr, "You're all set. Your key has been saved to ~/.a21e/credentials.")
+		fmt.Fprintln(os.Stderr, "To use it in this shell or add to your profile:")
+		fmt.Fprintf(os.Stderr, "  export A21E_API_KEY=%s\n", key)
+		fmt.Fprintln(os.Stderr, "")
+		fmt.Fprintln(os.Stderr, "To create a tool-specific key (e.g. for Cursor), run: a21e init --tool cursor")
+		return
+	}
+
 	// --- Resolve workspace ---
 	var wid string
 	if *workspaceID != "" {
 		wid = *workspaceID
 	} else {
-		if apiKey == "" {
-			if *nonInteractive {
-				fmt.Fprintf(os.Stderr, "a21e init: A21E_API_KEY is required in non-interactive mode\n")
-				os.Exit(1)
-			}
-			fmt.Fprintf(os.Stderr, "No A21E_API_KEY set. Get an API key at https://a21e.com/api-key then:\n")
-			fmt.Fprintf(os.Stderr, "  export A21E_API_KEY=your_key\n")
-			fmt.Fprintf(os.Stderr, "  a21e init --tool <tool_id>\n")
-			os.Exit(1)
-		}
 		ws, err := getDefaultWorkspace(apiKey, baseURL)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "a21e init: %v\n", err)
@@ -88,15 +111,22 @@ func runInit(args []string) {
 		}
 	}
 
-	// --- Tool required for key creation ---
+	// --- Tool: explicit flag, then auto-detect from environment, else prompt ---
+	if *tool == "" {
+		*tool = detectToolFromEnvironment()
+		if *tool != "" && !*nonInteractive {
+			fmt.Fprintf(os.Stderr, "Detected tool: %s\n", *tool)
+		}
+	}
 	if *tool == "" {
 		if *nonInteractive {
-			fmt.Fprintf(os.Stderr, "a21e init: --tool is required in non-interactive mode\n")
+			fmt.Fprintf(os.Stderr, "a21e init: --tool is required in non-interactive mode (or set A21E_TOOL_ID)\n")
 			os.Exit(1)
 		}
 		fmt.Println("To create a CLI key for a tool, run:")
 		fmt.Printf("  a21e init --tool <tool_id> [--workspace %s]\n", wid)
 		fmt.Println("Supported tool_id: codex_cli, claude_code_cli, cursor, vscode, jetbrains, openai_cli_custom")
+		fmt.Println("Or run 'a21e init' from inside Cursor, VS Code, or JetBrains terminal to auto-detect.")
 		fmt.Println("Or complete setup in the dashboard: https://a21e.com")
 		return
 	}
@@ -106,14 +136,20 @@ func runInit(args []string) {
 		os.Exit(1)
 	}
 
-	if apiKey == "" {
-		fmt.Fprintf(os.Stderr, "a21e init: A21E_API_KEY is required. Get one at https://a21e.com/api-key\n")
+	if *projectID != "" && *workspaceID == "" {
+		fmt.Fprintf(os.Stderr, "a21e init: --project requires --workspace\n")
 		os.Exit(1)
 	}
 
 	// --- Create CLI key ---
 	label := suggestLabel(*tool)
-	resp, err := createCLIKey(apiKey, baseURL, wid, *tool, label)
+	scope := "user"
+	if *projectID != "" {
+		scope = "project"
+	} else if *workspaceScoped {
+		scope = "workspace"
+	}
+	resp, err := createCLIKey(apiKey, baseURL, wid, *tool, label, scope, *projectID)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "a21e init: %v\n", err)
 		os.Exit(1)
@@ -128,6 +164,34 @@ func runInit(args []string) {
 	fmt.Fprintln(os.Stderr, "Add to your environment (e.g. in ~/.zshrc or ~/.bashrc):")
 	fmt.Fprintf(os.Stderr, "  export A21E_API_KEY=%s\n", resp.Key)
 	fmt.Fprintln(os.Stderr, "")
+
+	fmt.Fprintln(os.Stderr, "Tool configuration values:")
+	fmt.Fprintf(os.Stderr, "  Base URL: %s\n", openAIBaseURL(baseURL))
+	fmt.Fprintf(os.Stderr, "  API key:  %s\n", resp.Key)
+	fmt.Fprintln(os.Stderr, "  Model:    a21e-auto")
+	fmt.Fprintln(os.Stderr, "")
+
+	if *apply {
+		summary, err := applyToolConfiguration(*tool, resp.Key, baseURL)
+		if err == nil {
+			fmt.Fprintln(os.Stderr, "Auto-configuration applied:")
+			fmt.Fprintf(os.Stderr, "  %s\n", summary.Details)
+			fmt.Fprintf(os.Stderr, "  Updated: %s\n", summary.UpdatedPath)
+			if summary.BackupPath != "" {
+				fmt.Fprintf(os.Stderr, "  Backup:  %s\n", summary.BackupPath)
+			}
+			fmt.Fprintln(os.Stderr, "")
+		} else if errors.Is(err, errAutoConfigUnsupported) {
+			fmt.Fprintln(os.Stderr, "Auto-configuration is not supported for this tool yet.")
+			fmt.Fprintln(os.Stderr, "Configure your tool manually with the values above.")
+			fmt.Fprintln(os.Stderr, "")
+		} else {
+			fmt.Fprintf(os.Stderr, "Auto-configuration failed: %v\n", err)
+			fmt.Fprintln(os.Stderr, "Configure your tool manually with the values above.")
+			fmt.Fprintln(os.Stderr, "")
+		}
+	}
+
 	if !*nonInteractive && isTerminal() {
 		fmt.Fprint(os.Stderr, "Press Enter to continue... ")
 		bufio.NewReader(os.Stdin).ReadBytes('\n')

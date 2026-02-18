@@ -40,6 +40,8 @@ type createCliKeyReq struct {
 	ToolID     string `json:"tool_id"`
 	Label      string `json:"label,omitempty"`
 	DeviceName string `json:"device_name,omitempty"`
+	Scope      string `json:"scope,omitempty"`      // user (default), workspace, project
+	ProjectID  string `json:"project_id,omitempty"` // required when scope=project
 }
 
 type createCliKeyResp struct {
@@ -126,8 +128,14 @@ func listWorkspaces(apiKey, baseURL string) ([]workspaceResp, error) {
 	return r.Items, nil
 }
 
-func createCLIKey(apiKey, baseURL, workspaceID, toolID, label string) (*createCliKeyResp, error) {
+func createCLIKey(apiKey, baseURL, workspaceID, toolID, label, scope, projectID string) (*createCliKeyResp, error) {
 	req := createCliKeyReq{ToolID: toolID, Label: label}
+	if scope != "" {
+		req.Scope = scope
+	}
+	if projectID != "" {
+		req.ProjectID = projectID
+	}
 	raw, code, err := apiRequest(apiKey, baseURL, "POST", "/v1/workspaces/"+workspaceID+"/cli-keys", req)
 	if err != nil {
 		return nil, err
