@@ -58,6 +58,12 @@ type apiError struct {
 	Code  string `json:"code"`
 }
 
+type apiKeyListItem struct {
+	ID        string `json:"id"`
+	KeyPrefix string `json:"key_prefix"`
+	IsActive  *bool  `json:"is_active"`
+}
+
 func apiRequest(apiKey, baseURL, method, path string, body interface{}) ([]byte, int, error) {
 	url := strings.TrimSuffix(baseURL, "/") + path
 	var bodyReader io.Reader
@@ -154,4 +160,73 @@ func createCLIKey(apiKey, baseURL, workspaceID, toolID, label, scope, projectID 
 		return nil, err
 	}
 	return &r, nil
+}
+
+func listAPIKeysForUser(apiKey, baseURL string) ([]apiKeyListItem, error) {
+	raw, code, err := apiRequest(apiKey, baseURL, "GET", "/v1/api-keys", nil)
+	if err != nil {
+		return nil, err
+	}
+	if code != http.StatusOK {
+		var ae apiError
+		_ = json.Unmarshal(raw, &ae)
+		msg := ae.Error
+		if msg == "" {
+			msg = string(raw)
+		}
+		return nil, fmt.Errorf("API %d: %s", code, msg)
+	}
+
+	var items []apiKeyListItem
+	if err := json.Unmarshal(raw, &items); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+func keyPrefixFromRaw(apiKey string) string {
+	if len(apiKey) <= 12 {
+		return apiKey
+	}
+	return apiKey[:12]
+}
+
+func revokeApiKeyByID(apiKey, baseURL, keyID string) error {
+	raw, code, err := apiRequest(apiKey, baseURL, "DELETE", "/v1/api-keys/"+keyID, nil)
+	if err != nil {
+		return err
+	}
+	if code == http.StatusOK || code == http.StatusNoContent {
+		return nil
+	}
+	var ae apiError
+	_ = json.Unmarshal(raw, &ae)
+	msg := ae.Error
+	if msg == "" {
+		msg = string(raw)
+	}
+	return fmt.Errorf("API %d: %s", code, msg)
+}
+
+func revokeBootstrapKeyIfPresent(apiKey, baseURL, bootstrapKey string) error {
+	prefix := keyPrefixFromRaw(bootstrapKey)
+	if prefix == "" {
+		return nil
+	}
+
+	items, err := listAPIKeysForUser(apiKey, baseURL)
+	if err != nil {
+		return err
+	}
+
+	for _, item := range items {
+		if item.KeyPrefix != prefix {
+			continue
+		}
+		if item.IsActive != nil && !*item.IsActive {
+			return nil
+		}
+		return revokeApiKeyByID(apiKey, baseURL, item.ID)
+	}
+	return nil
 }

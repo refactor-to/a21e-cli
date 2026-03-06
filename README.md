@@ -9,14 +9,19 @@ curl -fsSL https://get.a21e.com/install.sh | bash
 ## Commands
 
 - **a21e version** — Show version (set at build time from release tag).
-- **a21e init** — Create a CLI key for a tool and print export snippet.
-  - **Device login (no key yet):** Run `a21e init` with no `A21E_API_KEY` set. The CLI will print a URL; open it in your browser, sign in, and click “Authorize this device.” The key is then saved to `~/.a21e/credentials` and used automatically on the next run.
-  - **Single command in IDEs:** With a key (from device login or env), run `a21e init` from Cursor, VS Code, or JetBrains; the CLI auto-detects the tool so you don’t need `--tool`.
+- **a21e init** — Browser auth if needed, then create a tool-specific CLI key automatically.
+  - **Two-command setup (recommended):**
+    1. `curl -fsSL https://get.a21e.com/install.sh | bash`
+    2. `a21e init --tool <tool_id> --workspace <workspace_id> --apply --yes`
+  - **Device login (no key yet):** If no key exists, `a21e init` prints a browser URL. After you authorize, setup continues in the same command and creates the tool key automatically.
+  - **Key hygiene:** The temporary bootstrap key used during browser auth is revoked automatically after the tool key is created.
+  - **No manual key export required:** Generated keys are saved to `~/.a21e/credentials` and reused automatically.
+  - **Single command in IDEs:** Run `a21e init` from Cursor, VS Code, or JetBrains; the CLI auto-detects the tool so you don’t need `--tool`.
   - Interactive: `a21e init` (uses default workspace; tool is auto-detected when possible, else use `--tool <id>`).
   - Scoped: `a21e init --tool claude_code_cli [--workspace <id>]`.
-  - Auto-apply supported configs: `a21e init --tool vscode --workspace <id> --apply`.
+  - Auto-apply supported configs: `a21e init --tool vscode --workspace <id> --apply --yes`.
   - CI: `a21e init --non-interactive --tool <id> --workspace <id> --yes` (or set `A21E_TOOL_ID`).
-  - Key source: `A21E_API_KEY` env, or `~/.a21e/credentials` (written by device login). Optional `A21E_API_URL`, `A21E_TOOL_ID`.
+  - Key source: `~/.a21e/credentials` (default) or `A21E_API_KEY` (optional override). Optional `A21E_API_URL`, `A21E_TOOL_ID`.
   - Supported tool IDs: `codex_cli`, `claude_code_cli`, `cursor`, `vscode`, `jetbrains`, `openai_cli_custom`.
   - **Note:** Cursor’s integrated terminal often sets `TERM_PROGRAM=vscode`, so tool may be detected as `vscode`. To create a Cursor key and apply Cursor settings, use `a21e init --tool cursor` or `A21E_TOOL_ID=cursor a21e init`.
 

@@ -36,8 +36,8 @@ Usage:
   a21e init            Interactive setup (or use --tool and --workspace)
 
 Init:
-  a21e init                              Auto-detect tool in Cursor/VS Code/JetBrains terminal, or prompt
-  a21e init --tool <tool_id>              Create user-scoped CLI key (works with any workspace)
+  a21e init                              Browser auth if needed, then auto-detect tool in Cursor/VS Code/JetBrains terminal, or prompt
+  a21e init --tool <tool_id>              Browser auth if needed, then create user-scoped tool key
   a21e init --tool <tool_id> --workspace <id>   Create key in workspace (user-scoped by default)
   a21e init --tool <tool_id> --workspace <id> --workspace-scoped   Key bound to that workspace only
   a21e init --tool <tool_id> --workspace <id> --project <id>   Key bound to that project only
@@ -45,7 +45,7 @@ Init:
   a21e init --non-interactive --tool <id> --workspace <id> --yes   CI mode
 
 Environment:
-  A21E_API_KEY   Your API key (get one at https://a21e.com/api-key)
+  A21E_API_KEY   Optional override. If omitted, a21e uses ~/.a21e/credentials (browser-auth writes this file)
   A21E_API_URL   API base URL (default https://api.a21e.com)
   A21E_TOOL_ID   Override auto-detected tool (e.g. cursor, vscode, jetbrains)
 
@@ -62,13 +62,13 @@ func runInit(args []string) {
 	apply := fs.Bool("apply", false, "Auto-apply configuration where supported")
 	nonInteractive := fs.Bool("non-interactive", false, "CI/non-interactive mode")
 	yes := fs.Bool("yes", false, "Skip confirmations")
-	_ = yes
 	if err := fs.Parse(args); err != nil {
 		os.Exit(1)
 	}
 
 	apiKey := getAPIKey()
 	baseURL := getAPIBaseURL()
+	bootstrapKey := ""
 
 	// --- No API key: offer device flow (browser sign-in) or exit ---
 	if apiKey == "" {
@@ -87,12 +87,9 @@ func runInit(args []string) {
 			fmt.Fprintf(os.Stderr, "Save the key below and set A21E_API_KEY in your environment.\n")
 		}
 		fmt.Fprintln(os.Stderr, "")
-		fmt.Fprintln(os.Stderr, "You're all set. Your key has been saved to ~/.a21e/credentials.")
-		fmt.Fprintln(os.Stderr, "To use it in this shell or add to your profile:")
-		fmt.Fprintf(os.Stderr, "  export A21E_API_KEY=%s\n", key)
-		fmt.Fprintln(os.Stderr, "")
-		fmt.Fprintln(os.Stderr, "To create a tool-specific key (e.g. for Cursor), run: a21e init --tool cursor")
-		return
+		fmt.Fprintln(os.Stderr, "Device authorized. Bootstrapping tool setup with your new credentials…")
+		apiKey = key
+		bootstrapKey = key
 	}
 
 	// --- Resolve workspace ---
@@ -155,16 +152,23 @@ func runInit(args []string) {
 		os.Exit(1)
 	}
 
-	// --- Show key once with warning (RFC: "Show once with warning") ---
-	fmt.Fprintln(os.Stderr, "")
-	fmt.Fprintln(os.Stderr, "Save this key now. You will not be able to view it again.")
-	fmt.Fprintln(os.Stderr, "")
-	fmt.Println(resp.Key)
-	fmt.Fprintln(os.Stderr, "")
-	fmt.Fprintln(os.Stderr, "Add to your environment (e.g. in ~/.zshrc or ~/.bashrc):")
-	fmt.Fprintf(os.Stderr, "  export A21E_API_KEY=%s\n", resp.Key)
-	fmt.Fprintln(os.Stderr, "")
+	if err := writeCredentialsFile(resp.Key); err != nil {
+		fmt.Fprintf(os.Stderr, "a21e init: could not save key to file: %v\n", err)
+		fmt.Fprintln(os.Stderr, "You can still use this key by setting A21E_API_KEY manually.")
+		fmt.Fprintln(os.Stderr, "")
+	} else {
+		fmt.Fprintln(os.Stderr, "")
+		fmt.Fprintln(os.Stderr, "Tool key created and saved to ~/.a21e/credentials.")
+		fmt.Fprintln(os.Stderr, "You do not need to manually export A21E_API_KEY for future a21e commands.")
+	}
 
+	if bootstrapKey != "" {
+		if err := revokeBootstrapKeyIfPresent(bootstrapKey, baseURL, bootstrapKey); err != nil {
+			fmt.Fprintf(os.Stderr, "a21e init: warning: could not revoke temporary bootstrap key: %v\n", err)
+		}
+	}
+
+	fmt.Fprintln(os.Stderr, "")
 	fmt.Fprintln(os.Stderr, "Tool configuration values:")
 	fmt.Fprintf(os.Stderr, "  Base URL: %s\n", openAIBaseURL(baseURL))
 	fmt.Fprintf(os.Stderr, "  API key:  %s\n", resp.Key)
@@ -192,7 +196,7 @@ func runInit(args []string) {
 		}
 	}
 
-	if !*nonInteractive && isTerminal() {
+	if !*nonInteractive && !*yes && isTerminal() {
 		fmt.Fprint(os.Stderr, "Press Enter to continue... ")
 		bufio.NewReader(os.Stdin).ReadBytes('\n')
 	}
