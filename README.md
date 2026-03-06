@@ -2,33 +2,17 @@
 
 The a21e CLI connects your coding tools to the [a21e](https://a21e.com) Agent Performance Layer. It handles authentication, creates tool-specific API keys, and auto-configures supported editors — so you can start using a21e prompts in two commands.
 
-## Install
-
-```bash
-curl -fsSL https://get.a21e.com/install.sh | bash
-```
-
-Verify the installation:
-
-```bash
-a21e version
-```
-
-Supported platforms: macOS (ARM, Intel) and Linux (ARM, x86_64).
-
 ## Quick start
 
-The fastest path from zero to working setup:
-
 ```bash
-# 1. Install
+# 1. Install (macOS or Linux)
 curl -fsSL https://get.a21e.com/install.sh | bash
 
 # 2. Set up your tool (opens browser to authenticate)
 a21e init
 ```
 
-That's it. The CLI auto-detects your editor when run from its integrated terminal, authenticates via your browser, creates an API key, and saves it to `~/.a21e/credentials`.
+The CLI auto-detects your editor when run from its integrated terminal, authenticates via your browser, creates an API key, and saves it to `~/.a21e/credentials`. Verify with `a21e version`.
 
 ## Usage
 
