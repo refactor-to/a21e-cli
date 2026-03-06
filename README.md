@@ -1,46 +1,180 @@
 # a21e CLI
 
-Minimal CLI for workspace setup and tool configuration. Install via:
+The a21e CLI connects your coding tools to the [a21e](https://a21e.com) Agent Performance Layer. It handles authentication, creates tool-specific API keys, and auto-configures supported editors — so you can start using a21e prompts in two commands.
+
+## Install
 
 ```bash
 curl -fsSL https://get.a21e.com/install.sh | bash
 ```
 
-## Commands
-
-- **a21e version** — Show version (set at build time from release tag).
-- **a21e init** — Browser auth if needed, then create a tool-specific CLI key automatically.
-  - **Two-command setup (recommended):**
-    1. `curl -fsSL https://get.a21e.com/install.sh | bash`
-    2. `a21e init --tool <tool_id> --workspace <workspace_id> --apply --yes`
-  - **Device login (no key yet):** If no key exists, `a21e init` prints a browser URL. After you authorize, setup continues in the same command and creates the tool key automatically.
-  - **Key hygiene:** The temporary bootstrap key used during browser auth is revoked automatically after the tool key is created.
-  - **No manual key export required:** Generated keys are saved to `~/.a21e/credentials` and reused automatically.
-  - **Single command in IDEs:** Run `a21e init` from Cursor, VS Code, or JetBrains; the CLI auto-detects the tool so you don’t need `--tool`.
-  - Interactive: `a21e init` (uses default workspace; tool is auto-detected when possible, else use `--tool <id>`).
-  - Scoped: `a21e init --tool claude_code_cli [--workspace <id>]`.
-  - Auto-apply supported configs: `a21e init --tool vscode --workspace <id> --apply --yes`.
-  - CI: `a21e init --non-interactive --tool <id> --workspace <id> --yes` (or set `A21E_TOOL_ID`).
-  - Key source: `~/.a21e/credentials` (default) or `A21E_API_KEY` (optional override). Optional `A21E_API_URL`, `A21E_TOOL_ID`.
-  - Supported tool IDs: `codex_cli`, `claude_code_cli`, `cursor`, `vscode`, `jetbrains`, `openai_cli_custom`.
-  - **Note:** Cursor’s integrated terminal often sets `TERM_PROGRAM=vscode`, so tool may be detected as `vscode`. To create a Cursor key and apply Cursor settings, use `a21e init --tool cursor` or `A21E_TOOL_ID=cursor a21e init`.
-
-## Auto-apply support
-
-- `vscode`: patches VS Code user settings (`a21e.apiUrl`, `a21e.apiKey`, `a21e.defaultModel`).
-- `cursor`: patches Cursor user settings (`a21e.apiUrl`, `a21e.apiKey`, `a21e.defaultModel`).
-- `openai_cli_custom`: updates shell profile with `OPENAI_API_BASE`, `OPENAI_BASE_URL`, `OPENAI_API_KEY`.
-- `codex_cli`, `claude_code_cli`, `jetbrains`: manual configuration remains required.
-
-## Building
-
-From repo root or `packages/cli`:
+Verify the installation:
 
 ```bash
-cd packages/cli
-go build -ldflags "-X main.version=dev" -o a21e .
+a21e version
 ```
 
-## Releases
+Supported platforms: macOS (ARM, Intel) and Linux (ARM, x86_64).
 
-Binaries are built and attached to GitHub Releases by the [Release CLI](../../.github/workflows/release-cli.yml) workflow when you **publish a Release** (e.g. from tag `v0.1.0`). Assets: `a21e-darwin-arm64.tar.gz`, `a21e-darwin-x86_64.tar.gz`, `a21e-linux-arm64.tar.gz`, `a21e-linux-x86_64.tar.gz` and their `.sha256` files. The install script uses `https://github.com/refactor-to/a21e-cli/releases/latest/download/<asset>` (default repo: refactor-to/a21e-cli).
+## Quick start
+
+The fastest path from zero to working setup:
+
+```bash
+# 1. Install
+curl -fsSL https://get.a21e.com/install.sh | bash
+
+# 2. Set up your tool (opens browser to authenticate)
+a21e init
+```
+
+That's it. The CLI auto-detects your editor when run from its integrated terminal, authenticates via your browser, creates an API key, and saves it to `~/.a21e/credentials`.
+
+## Usage
+
+### Interactive setup (recommended)
+
+Run from your editor's integrated terminal:
+
+```bash
+a21e init
+```
+
+The CLI will:
+1. Detect your editor (Cursor, VS Code, JetBrains)
+2. Open your browser to sign in (if no API key exists yet)
+3. Create a tool-specific API key
+4. Save credentials to `~/.a21e/credentials`
+
+### Specify a tool explicitly
+
+```bash
+a21e init --tool cursor
+a21e init --tool claude_code_cli --workspace <workspace_id>
+```
+
+### Auto-apply editor settings
+
+For supported tools, `--apply` patches your editor config automatically:
+
+```bash
+a21e init --tool vscode --apply --yes
+a21e init --tool cursor --apply --yes
+```
+
+### CI / non-interactive mode
+
+```bash
+export A21E_API_KEY=a21e_...
+a21e init --non-interactive --tool codex_cli --workspace <workspace_id> --yes
+```
+
+### Key scoping
+
+By default, keys are user-scoped (work across all workspaces). You can restrict them:
+
+```bash
+# Key works only in this workspace
+a21e init --tool cursor --workspace <id> --workspace-scoped
+
+# Key works only in this project
+a21e init --tool cursor --workspace <id> --project <project_id>
+```
+
+## Supported tools
+
+| Tool ID | Editor | Auto-detect | Auto-apply |
+|---------|--------|:-----------:|:----------:|
+| `cursor` | Cursor | Yes | Yes — patches Cursor user settings |
+| `vscode` | VS Code | Yes | Yes — patches VS Code user settings |
+| `jetbrains` | IntelliJ, PyCharm, etc. | Yes | No — configure manually |
+| `claude_code_cli` | Claude Code | No | No — configure manually |
+| `codex_cli` | Codex CLI | No | No — configure manually |
+| `openai_cli_custom` | OpenAI-compatible CLIs | No | Yes — sets shell env vars |
+
+**Auto-detect** means the CLI identifies the tool when run from its integrated terminal.
+**Auto-apply** means `--apply` can write the configuration for you.
+
+> **Cursor users:** Cursor's terminal sometimes reports itself as `vscode`. If this happens, specify the tool explicitly: `a21e init --tool cursor`.
+
+## Configuration
+
+### Credentials file
+
+The CLI stores your API key at:
+
+```
+~/.a21e/credentials
+```
+
+Format:
+
+```
+A21E_API_KEY=a21e_...
+```
+
+This file is created automatically during `a21e init`. You never need to edit it manually.
+
+### Environment variables
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `A21E_API_KEY` | API key (overrides credentials file) | Read from `~/.a21e/credentials` |
+| `A21E_API_URL` | API base URL | `https://api.a21e.com` |
+| `A21E_TOOL_ID` | Override auto-detected tool ID | Auto-detected from terminal |
+
+### What auto-apply configures
+
+| Tool | What gets patched | Settings |
+|------|-------------------|----------|
+| VS Code | `~/Library/Application Support/Code/User/settings.json` | `a21e.apiUrl`, `a21e.apiKey`, `a21e.defaultModel` |
+| Cursor | `~/Library/Application Support/Cursor/User/settings.json` | `a21e.apiUrl`, `a21e.apiKey`, `a21e.defaultModel` |
+| OpenAI CLI | Shell profile (`.zshrc`, `.bashrc`, etc.) | `OPENAI_API_BASE`, `OPENAI_BASE_URL`, `OPENAI_API_KEY` |
+
+On Linux, editor settings are at `~/.config/{Code,Cursor}/User/settings.json`.
+
+A backup of your original file is created before any changes (e.g., `settings.json.bak-20260305T120000Z`).
+
+## Updating
+
+Re-run the install script:
+
+```bash
+curl -fsSL https://get.a21e.com/install.sh | bash
+```
+
+Your credentials are preserved — only the binary is replaced.
+
+## Uninstalling
+
+```bash
+# Remove the binary
+rm "$(which a21e)"
+
+# Remove credentials and config
+rm -rf ~/.a21e
+```
+
+## Troubleshooting
+
+**"No API key found" when running `a21e init`:**
+This is expected on first run. The CLI will open your browser to authenticate. Complete the sign-in flow and the key is saved automatically.
+
+**Tool detected as `vscode` when using Cursor:**
+Cursor's integrated terminal sets `TERM_PROGRAM=vscode`. Use `a21e init --tool cursor` or set `A21E_TOOL_ID=cursor` in your environment.
+
+**"Permission denied" during install:**
+The install script places the binary in `/usr/local/bin`. If that fails, run with `sudo` or install to a user directory:
+```bash
+curl -fsSL https://get.a21e.com/install.sh | INSTALL_DIR=~/.local/bin bash
+```
+
+**Auto-apply failed with "settings JSON is invalid":**
+Your editor's `settings.json` has a syntax error. Fix it manually (or restore from the `.bak-*` backup the CLI created), then re-run `a21e init --apply`.
+
+**Key not working after init:**
+Check that `~/.a21e/credentials` contains a valid key starting with `a21e_`. If you've set `A21E_API_KEY` in your shell profile, it takes precedence over the credentials file.
+
+## License
+
+MIT
