@@ -55,14 +55,10 @@ a21e init --non-interactive --tool codex_cli --workspace <workspace_id> --yes
 
 ### Key scoping
 
-By default, keys are user-scoped (work across all workspaces). You can restrict them:
+By default, keys are user-scoped (work across all workspaces). You can restrict a key to a single workspace:
 
 ```bash
-# Key works only in this workspace
 a21e init --tool cursor --workspace <id> --workspace-scoped
-
-# Key works only in this project
-a21e init --tool cursor --workspace <id> --project <project_id>
 ```
 
 ## Supported tools

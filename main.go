@@ -40,7 +40,6 @@ Init:
   a21e init --tool <tool_id>              Browser auth if needed, then create user-scoped tool key
   a21e init --tool <tool_id> --workspace <id>   Create key in workspace (user-scoped by default)
   a21e init --tool <tool_id> --workspace <id> --workspace-scoped   Key bound to that workspace only
-  a21e init --tool <tool_id> --workspace <id> --project <id>   Key bound to that project only
   a21e init --tool <tool_id> --workspace <id> --apply   Auto-apply supported tool settings
   a21e init --non-interactive --tool <id> --workspace <id> --yes   CI mode
 
@@ -58,7 +57,6 @@ func runInit(args []string) {
 	tool := fs.String("tool", "", "Tool ID to configure (e.g. claude_code_cli)")
 	workspaceID := fs.String("workspace", "", "Workspace ID (omit to use default)")
 	workspaceScoped := fs.Bool("workspace-scoped", false, "Bind key to this workspace only")
-	projectID := fs.String("project", "", "Bind key to this project (must be in the given workspace)")
 	apply := fs.Bool("apply", false, "Auto-apply configuration where supported")
 	nonInteractive := fs.Bool("non-interactive", false, "CI/non-interactive mode")
 	yes := fs.Bool("yes", false, "Skip confirmations")
@@ -133,20 +131,13 @@ func runInit(args []string) {
 		os.Exit(1)
 	}
 
-	if *projectID != "" && *workspaceID == "" {
-		fmt.Fprintf(os.Stderr, "a21e init: --project requires --workspace\n")
-		os.Exit(1)
-	}
-
 	// --- Create CLI key ---
 	label := suggestLabel(*tool)
 	scope := "user"
-	if *projectID != "" {
-		scope = "project"
-	} else if *workspaceScoped {
+	if *workspaceScoped {
 		scope = "workspace"
 	}
-	resp, err := createCLIKey(apiKey, baseURL, wid, *tool, label, scope, *projectID)
+	resp, err := createCLIKey(apiKey, baseURL, wid, *tool, label, scope)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "a21e init: %v\n", err)
 		os.Exit(1)
